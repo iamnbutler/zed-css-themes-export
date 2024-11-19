@@ -68,7 +68,6 @@ fn main() {
             }
         }
 
-        // Write master index.css
         let master_index_path = output_dir.join("index.css");
         if let Err(e) = fs::write(master_index_path, master_index_content) {
             eprintln!("Error writing master index.css: {}", e);
@@ -78,7 +77,7 @@ fn main() {
             eprintln!("Error generating main themes.json: {}", e);
         }
     } else {
-        println!("The specified path does not exist or is not a directory.");
+        eprintln!("The specified path does not exist or is not a directory.");
     }
 }
 
@@ -87,13 +86,10 @@ fn process_theme(
     output_dir: &Path,
     extension_name: &str,
 ) -> Result<Vec<serde_json::Value>, io::Error> {
-    println!("Processing theme: {:?}", theme_path);
-
     let theme_content = fs::read_to_string(theme_path)?;
     let theme_json: Value = serde_json::from_str(&theme_content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    // Read and parse the default.json file
     let default_content = fs::read_to_string("src/default.json")?;
     let default_json: Value = serde_json::from_str(&default_content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -131,7 +127,6 @@ fn process_theme(
 }
 
 fn generate_merged_css(default: &Value, theme: &Value) -> String {
-    println!("Generating merged CSS");
     let theme_name = theme["name"].as_str().unwrap_or("unnamed");
     let mut css = format!("body.theme.{} {{\n", to_snake_case(theme_name));
 
@@ -142,21 +137,7 @@ fn generate_merged_css(default: &Value, theme: &Value) -> String {
         .and_then(Value::as_object);
     let theme_style = theme.get("style").and_then(Value::as_object);
 
-    if default_style.is_none() {
-        eprintln!(
-            "Error: Default style not found. Default JSON structure: {:?}",
-            default
-        );
-    }
-    if theme_style.is_none() {
-        eprintln!(
-            "Error: Theme style not found. Theme JSON structure: {:?}",
-            theme
-        );
-    }
-
     if let (Some(default_style), Some(theme_style)) = (default_style, theme_style) {
-        println!("Default style and theme style found");
         for (key, default_value) in default_style {
             if key != "players" && key != "syntax" {
                 let final_value = theme_style.get(key).unwrap_or(default_value);
@@ -165,13 +146,11 @@ fn generate_merged_css(default: &Value, theme: &Value) -> String {
                     _ => final_value.to_string(),
                 };
                 if !value_str.is_empty() && value_str != "null" {
-                    println!("Adding property: {} = {}", key, value_str);
                     css.push_str(&format!("  --{}: {};\n", to_snake_case(key), value_str));
                 }
             }
         }
 
-        // Process players
         let empty_vec = vec![];
         let empty_map = serde_json::Map::new();
         let default_players = default_style
@@ -211,7 +190,6 @@ fn generate_merged_css(default: &Value, theme: &Value) -> String {
             }
         }
 
-        // Process syntax
         let empty_syntax = serde_json::Map::new();
         let default_syntax = default_style
             .get("syntax")
@@ -241,12 +219,9 @@ fn generate_merged_css(default: &Value, theme: &Value) -> String {
                 }
             }
         }
-    } else {
-        eprintln!("Error: Unable to process styles");
     }
 
     css.push_str("}\n");
-    println!("Generated CSS:\n{}", css);
     css
 }
 
