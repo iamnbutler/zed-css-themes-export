@@ -1,0 +1,26 @@
+:root {
+  --editor-background: "#000";
+  --predictive: "#5D5945";
+  --predictive-background: null;
+  --syntax-comment-color: "#787c80";
+  --syntax-constant-color: "#CF6A4C";
+  --syntax-constructor-color: "#9B859D";
+  --syntax-function-color: "#9B6F3E";
+  --syntax-keyword-color: "#CDA869";
+  --syntax-number-color: "#CF6A4C";
+  --syntax-operator-color: "#7587A6";
+  --syntax-predictive-color: "#787c80";
+  --syntax-property-color: "#7587A6";
+  --syntax-string-color: "#8F9D6A";
+  --syntax-string-special-color: "#E6DB74";
+  --syntax-string-special-symbol-color: "#E6DB74";
+  --syntax-suggestion-color: "#787c80";
+  --syntax-tag-color: "#f0be6e";
+  --syntax-tag-font_style: "italic";
+  --syntax-tag-font_weight: null;
+  --syntax-title-color: "#7587A6";
+  --syntax-title-font_weight: 600;
+  --syntax-type-color: "#DAD085";
+  --syntax-variable-color: "#7587A6";
+  --syntax-variant-color: "#787c80";
+}
