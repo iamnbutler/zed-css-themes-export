@@ -41,6 +41,7 @@ fn main() {
 
         let output_dir = Path::new("output");
         let mut successful_themes: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+        let mut master_index_content = String::new();
 
         for (extension, theme_families) in &themes_dirs {
             let mut extension_themes = Vec::new();
@@ -50,13 +51,27 @@ fn main() {
                     .join("themes")
                     .join(theme_family);
                 match process_theme(&theme_path, output_dir, extension) {
-                    Ok(themes) => extension_themes.extend(themes),
+                    Ok(themes) => {
+                        for theme in &themes {
+                            if let Some(css_path) = theme["css"].as_str() {
+                                master_index_content
+                                    .push_str(&format!("@import url(\"{}\");\n", css_path));
+                            }
+                        }
+                        extension_themes.extend(themes);
+                    }
                     Err(e) => eprintln!("Error processing theme {:?}: {}", theme_path, e),
                 }
             }
             if !extension_themes.is_empty() {
                 successful_themes.insert(extension.clone(), extension_themes);
             }
+        }
+
+        // Write master index.css
+        let master_index_path = output_dir.join("index.css");
+        if let Err(e) = fs::write(master_index_path, master_index_content) {
+            eprintln!("Error writing master index.css: {}", e);
         }
 
         if let Err(e) = generate_main_themes_json(output_dir, &successful_themes) {
@@ -99,11 +114,13 @@ fn process_theme(
             let mut css_file = File::create(&css_file_path)?;
             css_file.write_all(css_content.as_bytes())?;
 
+            let relative_path = format!("{}/{}", to_snake_case(extension_name), css_file_name);
+
             processed_themes.push(serde_json::json!({
                 "name": theme_name,
                 "appearance": to_snake_case(appearance),
                 "family": theme_path.file_name().unwrap().to_str().unwrap().replace(".json", ""),
-                "css": format!("{}/{}", to_snake_case(extension_name), css_file_name)
+                "css": relative_path
             }));
         }
     }
@@ -115,7 +132,8 @@ fn process_theme(
 
 fn generate_merged_css(default: &Value, theme: &Value) -> String {
     println!("Generating merged CSS");
-    let mut css = String::from(":root {\n");
+    let theme_name = theme["name"].as_str().unwrap_or("unnamed");
+    let mut css = format!("body.theme.{} {{\n", to_snake_case(theme_name));
 
     let default_style = default["themes"]
         .as_array()
@@ -141,43 +159,83 @@ fn generate_merged_css(default: &Value, theme: &Value) -> String {
         println!("Default style and theme style found");
         for (key, default_value) in default_style {
             if key != "players" && key != "syntax" {
-                let theme_value = theme_style.get(key).and_then(|v| v.as_str()).unwrap_or("");
-                let final_value = if !theme_value.is_empty() {
-                    theme_value
-                } else {
-                    default_value.as_str().unwrap_or("")
+                let final_value = theme_style.get(key).unwrap_or(default_value);
+                let value_str = match final_value {
+                    Value::String(s) => format!("\"{}\"", s),
+                    _ => final_value.to_string(),
                 };
-                println!("Adding property: {} = {}", key, final_value);
-                css.push_str(&format!("  --{}: {};\n", to_snake_case(key), final_value));
+                if !value_str.is_empty() && value_str != "null" {
+                    println!("Adding property: {} = {}", key, value_str);
+                    css.push_str(&format!("  --{}: {};\n", to_snake_case(key), value_str));
+                }
             }
         }
 
         // Process players
-        if let Some(players) = theme_style.get("players").and_then(|p| p.as_array()) {
-            for (index, player) in players.iter().enumerate() {
-                if let Some(player_obj) = player.as_object() {
-                    for (key, value) in player_obj {
-                        css.push_str(&format!(
-                            "  --player_{}_{}: {};\n",
-                            index + 1,
-                            to_snake_case(key),
-                            value
-                        ));
-                    }
+        let empty_vec = vec![];
+        let empty_map = serde_json::Map::new();
+        let default_players = default_style
+            .get("players")
+            .and_then(|p| p.as_array())
+            .unwrap_or(&empty_vec);
+        let theme_players = theme_style
+            .get("players")
+            .and_then(|p| p.as_array())
+            .unwrap_or(&empty_vec);
+        let max_players = default_players.len().max(theme_players.len());
+
+        for index in 0..max_players {
+            let default_player = default_players
+                .get(index)
+                .and_then(|p| p.as_object())
+                .unwrap_or(&empty_map);
+            let theme_player = theme_players
+                .get(index)
+                .and_then(|p| p.as_object())
+                .unwrap_or(&empty_map);
+
+            for (key, default_value) in default_player {
+                let final_value = theme_player.get(key).unwrap_or(default_value);
+                let value_str = match final_value {
+                    Value::String(s) => format!("\"{}\"", s),
+                    _ => final_value.to_string(),
+                };
+                if !value_str.is_empty() && value_str != "null" {
+                    css.push_str(&format!(
+                        "  --player_{}_{}: {};\n",
+                        index + 1,
+                        to_snake_case(key),
+                        value_str
+                    ));
                 }
             }
         }
 
         // Process syntax
-        if let Some(syntax) = theme_style.get("syntax").and_then(|s| s.as_object()) {
-            for (key, value) in syntax {
-                if let Some(value_obj) = value.as_object() {
-                    for (sub_key, sub_value) in value_obj {
+        let empty_syntax = serde_json::Map::new();
+        let default_syntax = default_style
+            .get("syntax")
+            .and_then(|s| s.as_object())
+            .unwrap_or(&empty_syntax);
+        let theme_syntax = theme_style
+            .get("syntax")
+            .and_then(|s| s.as_object())
+            .unwrap_or(&empty_syntax);
+
+        for (key, default_value) in default_syntax {
+            let theme_value = theme_syntax.get(key).unwrap_or(default_value);
+            if let Some(value_obj) = theme_value.as_object() {
+                for (sub_key, sub_value) in value_obj {
+                    let value_str = match sub_value {
+                        Value::String(s) => format!("\"{}\"", s),
+                        _ => sub_value.to_string(),
+                    };
+                    if !value_str.is_empty() && value_str != "null" {
                         css.push_str(&format!(
                             "  --syntax_{}_{}: {};\n",
                             to_snake_case(key),
                             to_snake_case(sub_key),
-                            sub_value
+                            value_str
                         ));
                     }
                 }
