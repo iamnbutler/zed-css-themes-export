@@ -33,7 +33,7 @@ fn main() {
                             .filter_map(|entry| entry.file_name().into_string().ok())
                             .collect();
 
-                        themes_dirs.insert(to_snake_case(extension_name), theme_families);
+                        themes_dirs.insert(extension_name.to_string(), theme_families);
                     }
                 }
             }
@@ -78,7 +78,12 @@ fn process_theme(
     let theme_json: Value = serde_json::from_str(&theme_content)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let extension_dir = output_dir.join(extension_name);
+    // Read and parse the default.json file
+    let default_content = fs::read_to_string("src/default.json")?;
+    let default_json: Value = serde_json::from_str(&default_content)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+    let extension_dir = output_dir.join(to_snake_case(extension_name));
     fs::create_dir_all(&extension_dir)?;
 
     let mut processed_themes = Vec::new();
@@ -87,7 +92,7 @@ fn process_theme(
         for theme in themes {
             let theme_name = theme["name"].as_str().unwrap_or("Unnamed Theme");
             let appearance = theme["appearance"].as_str().unwrap_or("unknown");
-            let css_content = generate_css_from_theme(theme);
+            let css_content = generate_merged_css(&default_json, theme);
 
             let css_file_name = format!("{}.css", to_snake_case(theme_name));
             let css_file_path = extension_dir.join(&css_file_name);
@@ -98,7 +103,7 @@ fn process_theme(
                 "name": theme_name,
                 "appearance": to_snake_case(appearance),
                 "family": theme_path.file_name().unwrap().to_str().unwrap().replace(".json", ""),
-                "css": format!("{}/{}", extension_name, css_file_name)
+                "css": format!("{}/{}", to_snake_case(extension_name), css_file_name)
             }));
         }
     }
@@ -108,49 +113,82 @@ fn process_theme(
     Ok(processed_themes)
 }
 
-fn generate_css_from_theme(theme: &Value) -> String {
-    let mut css = String::new();
-    css.push_str(":root {\n");
+fn generate_merged_css(default: &Value, theme: &Value) -> String {
+    println!("Generating merged CSS");
+    let mut css = String::from(":root {\n");
 
-    if let Some(style) = theme["style"].as_object() {
-        for (key, value) in style {
+    let default_style = default["themes"]
+        .as_array()
+        .and_then(|themes| themes.first())
+        .and_then(|theme| theme.get("style"))
+        .and_then(Value::as_object);
+    let theme_style = theme.get("style").and_then(Value::as_object);
+
+    if default_style.is_none() {
+        eprintln!(
+            "Error: Default style not found. Default JSON structure: {:?}",
+            default
+        );
+    }
+    if theme_style.is_none() {
+        eprintln!(
+            "Error: Theme style not found. Theme JSON structure: {:?}",
+            theme
+        );
+    }
+
+    if let (Some(default_style), Some(theme_style)) = (default_style, theme_style) {
+        println!("Default style and theme style found");
+        for (key, default_value) in default_style {
             if key != "players" && key != "syntax" {
-                css.push_str(&format!("  --{}: {};\n", to_snake_case(key), value));
+                let theme_value = theme_style.get(key).and_then(|v| v.as_str()).unwrap_or("");
+                let final_value = if !theme_value.is_empty() {
+                    theme_value
+                } else {
+                    default_value.as_str().unwrap_or("")
+                };
+                println!("Adding property: {} = {}", key, final_value);
+                css.push_str(&format!("  --{}: {};\n", to_snake_case(key), final_value));
             }
         }
-    }
 
-    if let Some(players) = theme["style"]["players"].as_array() {
-        for (index, player) in players.iter().enumerate() {
-            if let Some(player_obj) = player.as_object() {
-                for (key, value) in player_obj {
-                    css.push_str(&format!(
-                        "  --player_{}_{}: {};\n",
-                        index + 1,
-                        to_snake_case(key),
-                        value
-                    ));
+        // Process players
+        if let Some(players) = theme_style.get("players").and_then(|p| p.as_array()) {
+            for (index, player) in players.iter().enumerate() {
+                if let Some(player_obj) = player.as_object() {
+                    for (key, value) in player_obj {
+                        css.push_str(&format!(
+                            "  --player_{}_{}: {};\n",
+                            index + 1,
+                            to_snake_case(key),
+                            value
+                        ));
+                    }
                 }
             }
         }
-    }
 
-    if let Some(syntax) = theme["style"]["syntax"].as_object() {
-        for (key, value) in syntax {
-            if let Some(value_obj) = value.as_object() {
-                for (sub_key, sub_value) in value_obj {
-                    css.push_str(&format!(
-                        "  --syntax_{}_{}: {};\n",
-                        to_snake_case(key),
-                        to_snake_case(sub_key),
-                        sub_value
-                    ));
+        // Process syntax
+        if let Some(syntax) = theme_style.get("syntax").and_then(|s| s.as_object()) {
+            for (key, value) in syntax {
+                if let Some(value_obj) = value.as_object() {
+                    for (sub_key, sub_value) in value_obj {
+                        css.push_str(&format!(
+                            "  --syntax_{}_{}: {};\n",
+                            to_snake_case(key),
+                            to_snake_case(sub_key),
+                            sub_value
+                        ));
+                    }
                 }
             }
         }
+    } else {
+        eprintln!("Error: Unable to process styles");
     }
 
     css.push_str("}\n");
+    println!("Generated CSS:\n{}", css);
     css
 }
 
