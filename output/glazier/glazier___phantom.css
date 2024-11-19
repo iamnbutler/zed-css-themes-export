@@ -1,0 +1,21 @@
+:root {
+  --background: "#000000AA";
+  --background_appearance: "blurred";
+  --border: "#00000000";
+  --editor_active_line_background: "#FF000022";
+  --editor_background: "#00000000";
+  --editor_gutter_background: "#00000000";
+  --elevated_surface_background: "#000011FF";
+  --panel_background: "#00000000";
+  --panel_focused_border: "#FF000033";
+  --status_bar_background: "#00000000";
+  --tab_active_background: "#FF000033";
+  --tab_inactive_background: "#00000000";
+  --tab_bar_background: "#00000000";
+  --terminal_background: "#00000000";
+  --text: "#FFFFFFDD";
+  --text_accent: "#FFCCCCDD";
+  --text_muted: "#FFFFFF88";
+  --title_bar_background: "#00000000";
+  --toolbar_background: "#00000000";
+}
