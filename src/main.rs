@@ -87,8 +87,13 @@ fn process_theme(
     extension_name: &str,
 ) -> Result<Vec<serde_json::Value>, io::Error> {
     let theme_content = fs::read_to_string(theme_path)?;
-    let theme_json: Value = serde_json::from_str(&theme_content)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    let theme_json: Value = match serde_json::from_str(&theme_content) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Skipping malformed theme {:?}: {}", theme_path, e);
+            return Ok(Vec::new());
+        }
+    };
 
     let default_content = fs::read_to_string("src/default.json")?;
     let default_json: Value = serde_json::from_str(&default_content)
@@ -121,7 +126,9 @@ fn process_theme(
         }
     }
 
-    generate_extension_index_css(&extension_dir, &theme_json)?;
+    if !processed_themes.is_empty() {
+        generate_extension_index_css(&extension_dir, &theme_json)?;
+    }
 
     Ok(processed_themes)
 }
